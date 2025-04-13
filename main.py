@@ -1,0 +1,179 @@
+from fastapi import FastAPI, Depends, HTTPException
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from passlib.context import CryptContext
+import jwt
+from datetime import datetime, timedelta
+from pydantic import BaseModel
+from typing import List, Dict
+from fastapi.middleware.cors import CORSMiddleware
+
+
+
+app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"], # Your Next.js URL
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# In-memory storage
+users = []
+circulars = []
+bids = []  # Store bids in a list
+
+# Security setup
+SECRET_KEY = "your_secret_key"
+ALGORITHM = "HS256"
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
+
+# Helper functions
+def hash_password(password: str) -> str:
+    return pwd_context.hash(password)
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    return pwd_context.verify(plain_password, hashed_password)
+
+def create_access_token(data: dict, expires_delta: timedelta = timedelta(days=1)):
+    to_encode = data.copy()
+    expire = datetime.utcnow() + expires_delta
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+def get_current_user(token: str = Depends(oauth2_scheme)):
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_email = payload.get("sub")
+        if not user_email:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        return user_email
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expired")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+# Pydantic models
+class UserCreate(BaseModel):
+    email: str
+    password: str
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str
+
+class TutorCircularCreate(BaseModel):
+    title: str
+    description: str
+
+class TutorCircularResponse(BaseModel):
+    id: int
+    title: str
+    user_email: str
+    description: str
+class BidCreate(BaseModel):
+    proposal: str
+
+class BidResponse(BaseModel):
+    id: int
+    circular_id: int
+    tutor_email: str
+    proposal: str
+    accepted: bool = False
+
+@app.post("/signup")
+def signup(user: UserCreate):
+    for u in users:
+        if u["email"] == user.email:
+            raise HTTPException(status_code=400, detail="Email already registered")
+    
+    new_user = {"email": user.email, "password": hash_password(user.password)}
+    users.append(new_user)
+    print(users)
+    return "Ok done"
+
+@app.post("/login", response_model=TokenResponse)
+def login(form_data: OAuth2PasswordRequestForm = Depends()):
+    print("slkdj")
+    for u in users:
+        if u["email"] == form_data.username and verify_password(form_data.password, u["password"]):
+            access_token = create_access_token(data={"sub": u["email"]})
+            return {"access_token": access_token, "token_type": "bearer"}
+    
+    raise HTTPException(status_code=401, detail="Invalid credentials")
+
+@app.get("/protected")
+def protected_route(token: str = Depends(oauth2_scheme)):
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        return {"message": f"Welcome, {payload}!"}
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expired")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+# New Route: Create Tutor Circular (Requires Authentication)
+@app.post("/circulars", response_model=TutorCircularResponse)
+def create_circular(circular: TutorCircularCreate, user_email: str = Depends(get_current_user)):
+    print(circular)
+    circular_id = len(circulars) + 1
+    
+    new_circular = {"id": circular_id, "title": circular.title, "user_email": user_email, "description": circular.description}
+    circulars.append(new_circular)
+    return new_circular
+
+# New Route: Get All Circulars
+@app.get("/circulars", response_model=List[TutorCircularResponse])
+def get_circulars():
+    print(circulars)
+    return circulars
+
+
+@app.post("/circulars/{circular_id}/bids", response_model=BidResponse)
+def place_bid(circular_id: int, bid: BidCreate, tutor_email: str = Depends(get_current_user)):
+    # Check if the circular exists
+    if not any(c["id"] == circular_id for c in circulars):
+        raise HTTPException(status_code=404, detail="Circular not found")
+
+    bid_id = len(bids) + 1
+
+    new_bid = {
+    "id": bid_id,              # Unique ID of the bid
+    "circular_id": circular_id, # The ID of the circular being bid on
+    "tutor_email": tutor_email,  # Email of the tutor placing the bid
+    "proposal": bid.proposal,   # Proposal text from the tutor
+    "status": "pending"         # Default status when bid is created
+    }
+
+    bids.append(new_bid)
+    return new_bid
+
+
+@app.get("/circulars/{circular_id}/bids", response_model=List[BidResponse])
+def get_bids(circular_id: int, user_email: str = Depends(get_current_user)):
+    # Find the circular and check ownership
+    circular = next((c for c in circulars if c["id"] == circular_id), None)
+    if not circular:
+        raise HTTPException(status_code=404, detail="Circular not found")
+    
+    if circular["user_email"] != user_email:
+        raise HTTPException(status_code=403, detail="You are not allowed to view bids on this circular")
+    
+    return [b for b in bids if b["circular_id"] == circular_id]
+
+
+@app.put("/circulars/{circular_id}/bids/{bid_id}/accept")
+def accept_bid(circular_id: int, bid_id: int, owner_email: str = Depends(get_current_user)):
+    # Check if the circular exists and is owned by the user
+    circular = next((c for c in circulars if c["id"] == circular_id and c["user_email"] == owner_email), None)
+    if not circular:
+        raise HTTPException(status_code=403, detail="You are not the owner of this circular")
+
+    # Find the bid
+    bid = next((b for b in bids if b["id"] == bid_id and b["circular_id"] == circular_id), None)
+    if not bid:
+        raise HTTPException(status_code=404, detail="Bid not found")
+
+    bid["accepted"] = True
+    return {"message": "Bid accepted successfully"}
