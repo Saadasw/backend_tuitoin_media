@@ -13,7 +13,7 @@ Content-Type: application/x-www-form-urlencoded
 username=user1@example.com&password=securepassword
 ### Protected Route (Replace <TOKEN>)
 GET http://127.0.0.1:8000/protected
-Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyQGV4YW1wbGUuY29tIiwiZXhwIjoxNzQyMzU3MzI2fQ.yMTzsFY3VH9vlNzF1qoT-JAqLv9KvetLUwvVDsXHEuo
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyMUBleGFtcGxlLmNvbSIsImV4cCI6MTc0NDE5MTM1M30.eOg1Vpyb4eESMpiPare2L91odhRfKbduGhjynt_TM9c
 
 ### Circular Route
 POST http://127.0.0.1:8000/circulars
@@ -29,7 +29,7 @@ username=user@example.com&password=securepassword
 GET http://127.0.0.1:8000/protected
 Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyMUBleGFtcGxlLmNvbSIsImV4cCI6MTc0MjM1NzYyOH0.7vme1IblwdC1LAZ1t6idlSpt8qw_ocRdYPnDdyNMMLQ
 
-### Circular Route
+### Circular POST Route
 POST http://127.0.0.1:8000/circulars
 Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyMUBleGFtcGxlLmNvbSIsImV4cCI6MTc0MjM1NzYyOH0.7vme1IblwdC1LAZ1t6idlSpt8qw_ocRdYPnDdyNMMLQ
 Content-Type: application/json
@@ -37,3 +37,7 @@ Content-Type: application/json
 {
   "title": "Math Tutor Needed"
 }
+
+### Circular GET Route
+GET http://127.0.0.1:8000/circulars
+

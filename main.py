@@ -22,6 +22,7 @@ app.add_middleware(
 users = []
 circulars = []
 bids = []  # Store bids in a list
+user_bit_on_cicular = []
 
 # Security setup
 SECRET_KEY = "your_secret_key"
@@ -80,7 +81,8 @@ class BidResponse(BaseModel):
     circular_id: int
     tutor_email: str
     proposal: str
-    accepted: bool = False
+    status: str
+    #accepted: bool = False
 
 @app.post("/signup")
 def signup(user: UserCreate):
@@ -132,21 +134,29 @@ def get_circulars():
 
 @app.post("/circulars/{circular_id}/bids", response_model=BidResponse)
 def place_bid(circular_id: int, bid: BidCreate, tutor_email: str = Depends(get_current_user)):
+    
     # Check if the circular exists
-    if not any(c["id"] == circular_id for c in circulars):
-        raise HTTPException(status_code=404, detail="Circular not found")
+    #if not any(c["id"] == circular_id for c in circulars):
+        #raise HTTPException(status_code=404, detail="Circular not found")
+    # Check if this tutor_email already bit on this circular or not
+    if any((b["tutor_email"] == tutor_email and b["circular_id"] == circular_id) for b in bids):
+        raise HTTPException(status_code=404, detail="You already bit on this offer")
+
 
     bid_id = len(bids) + 1
-
+    
     new_bid = {
     "id": bid_id,              # Unique ID of the bid
     "circular_id": circular_id, # The ID of the circular being bid on
     "tutor_email": tutor_email,  # Email of the tutor placing the bid
     "proposal": bid.proposal,   # Proposal text from the tutor
-    "status": "pending"         # Default status when bid is created
+    "status": "pending"          # Default status when bid is created
     }
-
+    
+    
     bids.append(new_bid)
+    for _ in bids:
+        print(_)
     return new_bid
 
 
