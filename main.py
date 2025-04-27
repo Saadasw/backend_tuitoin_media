@@ -7,7 +7,10 @@ from pydantic import BaseModel
 from typing import List, Dict
 from fastapi.middleware.cors import CORSMiddleware
 
-
+import random
+import string
+from eth_account.messages import encode_defunct
+from eth_account import Account
 
 app = FastAPI()
 app.add_middleware(
@@ -23,6 +26,12 @@ users = []
 circulars = []
 bids = []  # Store bids in a list
 user_bit_on_cicular = []
+# In-memory database for demo
+NONCES = {}
+
+class SignatureData(BaseModel):
+    address: str
+    signature: str
 
 # Security setup
 SECRET_KEY = "your_secret_key"
@@ -185,5 +194,41 @@ def accept_bid(circular_id: int, bid_id: int, owner_email: str = Depends(get_cur
     if not bid:
         raise HTTPException(status_code=404, detail="Bid not found")
 
-    bid["accepted"] = True
+    bid["status"] = "accepted"
     return {"message": "Bid accepted successfully"}
+
+@app.put("/circulars/{circular_id}/bids/{bid_id}/decline")
+def decline_bid(circular_id: int, bid_id: int, owner_email: str = Depends(get_current_user)):
+    # Check if the circular exists and is owned by the user
+    circular = next((c for c in circulars if c["id"] == circular_id and c["user_email"] == owner_email), None)
+    if not circular:
+        raise HTTPException(status_code=403, detail="You are not the owner of this circular")
+
+    # Find the bid
+    bid = next((b for b in bids if b["id"] == bid_id and b["circular_id"] == circular_id), None)
+    if not bid:
+        raise HTTPException(status_code=404, detail="Bid not found")
+
+    bid["status"] = "declined"
+    return {"message": "Bid declined successfully"}
+
+@app.get("/api/get_nonce")
+async def get_nonce(address: str):
+    nonce = ''.join(random.choices(string.ascii_letters + string.digits, k=20))
+    NONCES[address] = nonce
+    return {"nonce": nonce}
+
+@app.post("/api/verify_signature")
+async def verify_signature(data: SignatureData):
+    nonce = NONCES.get(data.address)
+    if not nonce:
+        raise HTTPException(status_code=400, detail="Nonce not found.")
+
+    message = encode_defunct(text=nonce)
+    recovered_address = Account.recover_message(message, signature=data.signature)
+
+    if recovered_address.lower() == data.address.lower():
+        # Login successful
+        return {"status": "success"}
+    else:
+        raise HTTPException(status_code=401, detail="Invalid signature.")
